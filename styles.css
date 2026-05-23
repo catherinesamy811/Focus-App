@@ -79,7 +79,8 @@ body.storage-warning::before {
   position: sticky;
   top: 0;
   z-index: 100;
-  height: var(--ribbon-h);
+  height: calc(var(--ribbon-h) + env(safe-area-inset-top));
+  padding-top: env(safe-area-inset-top);
   background: var(--surface);
   border-bottom: 1px solid var(--border);
   box-shadow: 0 1px 0 var(--border), var(--shadow-sm);
@@ -90,7 +91,7 @@ body.storage-warning::before {
   align-items: center;
   justify-content: space-between;
   padding: 0 var(--content-pad);
-  height: 100%;
+  height: var(--ribbon-h);
   gap: 24px;
   max-width: calc(var(--content-w) + var(--content-pad) * 2);
   margin: 0 auto;
