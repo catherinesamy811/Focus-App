@@ -3,6 +3,12 @@
 
   const STORAGE_KEY = "focus-productivity-state-v3";
 
+  const SUPABASE_URL = "REPLACE_WITH_YOUR_SUPABASE_URL";
+  const SUPABASE_ANON_KEY = "REPLACE_WITH_YOUR_SUPABASE_ANON_KEY";
+  const sb = (typeof globalThis.supabase !== "undefined" && SUPABASE_URL.startsWith("https://"))
+    ? globalThis.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
+    : null;
+
   const legacyStorageKeys = [
     "orbit-productivity-state-v2",
     "orbit-productivity-state-v1",
@@ -96,6 +102,10 @@
   let state;
   let pendingDates = [];
   let calendarInstance = null;
+  let currentUser = null;
+  let syncTimer = null;
+  let appStarted = false;
+  let eventsBound = false;
 
   function makeId(prefix = "id") {
     if (globalThis.crypto && typeof globalThis.crypto.randomUUID === "function") {
@@ -158,6 +168,62 @@
     } catch {
       showStorageWarning();
     }
+    scheduleSyncToSupabase();
+  }
+
+  function scheduleSyncToSupabase() {
+    if (!sb || !currentUser) return;
+    clearTimeout(syncTimer);
+    syncTimer = setTimeout(syncToSupabase, 1500);
+  }
+
+  async function syncToSupabase() {
+    if (!sb || !currentUser) return;
+    try {
+      await sb.from("user_state").upsert(
+        { user_id: currentUser.id, state: state },
+        { onConflict: "user_id" }
+      );
+    } catch (err) {
+      console.warn("Supabase sync failed:", err);
+    }
+  }
+
+  async function loadFromSupabase() {
+    if (!sb || !currentUser) return false;
+    try {
+      const { data, error } = await sb
+        .from("user_state")
+        .select("state")
+        .eq("user_id", currentUser.id)
+        .single();
+      if (error || !data) return false;
+      const fallback = createDefaultState();
+      state = normalizeState({ ...fallback, ...data.state }, fallback);
+      try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch {}
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  function subscribeToChanges() {
+    if (!sb || !currentUser) return;
+    sb.channel("state-sync")
+      .on("postgres_changes", {
+        event: "UPDATE",
+        schema: "public",
+        table: "user_state",
+        filter: `user_id=eq.${currentUser.id}`,
+      }, function(payload) {
+        if (!payload.new || !payload.new.state) return;
+        const fallback = createDefaultState();
+        state = normalizeState({ ...fallback, ...payload.new.state }, fallback);
+        try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch {}
+        renderAll();
+        renderBrainstorm();
+      })
+      .subscribe();
   }
 
   function loadState() {
@@ -1036,7 +1102,96 @@
     writeStorage();
     if (calendarInstance) calendarInstance.refetchEvents();
   }
-  function init() {
+  function showLoginOverlay() {
+    const overlay = document.getElementById("login-overlay");
+    if (overlay) overlay.hidden = false;
+    const btn = document.getElementById("ribbon-logout");
+    if (btn) btn.hidden = true;
+  }
+
+  function hideLoginOverlay() {
+    const overlay = document.getElementById("login-overlay");
+    if (overlay) overlay.hidden = true;
+    const btn = document.getElementById("ribbon-logout");
+    if (btn) btn.hidden = false;
+  }
+
+  function setLoginError(message) {
+    const el = document.getElementById("login-error");
+    if (el) el.textContent = message;
+  }
+
+  async function handleLoginSubmit(event) {
+    event.preventDefault();
+    if (!sb) return;
+    const email = document.getElementById("login-email");
+    const password = document.getElementById("login-password");
+    const submit = event.currentTarget.querySelector("[type=submit]");
+    setLoginError("");
+    submit.disabled = true;
+    submit.textContent = "Signing in...";
+    const { error } = await sb.auth.signInWithPassword({
+      email: email.value.trim(),
+      password: password.value,
+    });
+    if (error) {
+      setLoginError("Incorrect email or password.");
+      submit.disabled = false;
+      submit.textContent = "Sign in";
+    }
+  }
+
+  async function startApp() {
+    state = loadState();
+    state = normalizeState(state, createDefaultState());
+
+    if (sb && currentUser) {
+      const loaded = await loadFromSupabase();
+      if (!loaded) await syncToSupabase();
+      subscribeToChanges();
+    }
+
+    hideLoginOverlay();
+    if (!eventsBound) {
+      bindEvents();
+      toggleWeekdayPicker();
+      eventsBound = true;
+    }
+    renderAll();
+    renderBrainstorm();
+    appStarted = true;
+  }
+
+  async function initAuth() {
+    const loginForm = document.getElementById("login-form");
+    if (loginForm) loginForm.addEventListener("submit", handleLoginSubmit);
+
+    const logoutBtn = document.getElementById("ribbon-logout");
+    if (logoutBtn) {
+      logoutBtn.addEventListener("click", function() { sb.auth.signOut(); });
+    }
+
+    sb.auth.onAuthStateChange(async function(event, session) {
+      if (event === "SIGNED_IN" && session) {
+        currentUser = session.user;
+        if (!appStarted) await startApp();
+      } else if (event === "SIGNED_OUT") {
+        currentUser = null;
+        appStarted = false;
+        showLoginOverlay();
+      }
+    });
+
+    const { data: { session } } = await sb.auth.getSession();
+    if (session) {
+      currentUser = session.user;
+      await startApp();
+    } else {
+      showLoginOverlay();
+    }
+  }
+
+  async function init() {
     cacheDom();
 
     if (!requiredDomExists()) {
@@ -1050,12 +1205,11 @@
       day: "numeric",
     }).format(new Date());
 
-    state = loadState();
-    state = normalizeState(state, createDefaultState());
-    bindEvents();
-    toggleWeekdayPicker();
-    renderAll();
-    renderBrainstorm();
+    if (sb) {
+      await initAuth();
+    } else {
+      await startApp();
+    }
   }
 
   if (document.readyState === "loading") {
