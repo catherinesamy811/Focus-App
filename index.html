@@ -41,10 +41,10 @@
           <span class="brand-name">Focus</span>
         </div>
         <p class="login-tagline">Sign in to sync your workspace.</p>
-        <form id="login-form" novalidate>
+        <form id="login-form" autocomplete="on">
           <div class="login-fields">
-            <input type="email" id="login-email" placeholder="Email" autocomplete="email" required />
-            <input type="password" id="login-password" placeholder="Password" autocomplete="current-password" required />
+            <input type="email" id="login-email" name="email" placeholder="Email" autocomplete="username" inputmode="email" required />
+            <input type="password" id="login-password" name="password" placeholder="Password" autocomplete="current-password" required />
           </div>
           <button class="login-submit" type="submit">Sign in</button>
           <p class="login-error" id="login-error"></p>

@@ -6,7 +6,9 @@
   const SUPABASE_URL = "https://rdzzmupxwofotnkmalxl.supabase.co";
   const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJkenptdXB4d29mb3Rua21hbHhsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk1MjY0MDMsImV4cCI6MjA5NTEwMjQwM30.3IfN0tHzB7VFQm5v-ZjwJ_NxPrX3z-tKbXFhqz9BW08";
   const sb = (typeof globalThis.supabase !== "undefined" && SUPABASE_URL.startsWith("https://"))
-    ? globalThis.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
+    ? globalThis.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+        auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false },
+      })
     : null;
 
   const legacyStorageKeys = [
@@ -1162,6 +1164,18 @@
     appStarted = true;
   }
 
+  function getCachedUser() {
+    try {
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (!key || !key.startsWith("sb-") || !key.endsWith("-auth-token")) continue;
+        const session = JSON.parse(localStorage.getItem(key) || "null");
+        if (session && session.user && session.refresh_token) return session.user;
+      }
+    } catch {}
+    return null;
+  }
+
   async function initAuth() {
     const loginForm = document.getElementById("login-form");
     if (loginForm) loginForm.addEventListener("submit", handleLoginSubmit);
@@ -1172,9 +1186,11 @@
     }
 
     sb.auth.onAuthStateChange(async function(event, session) {
-      if (event === "SIGNED_IN" && session) {
+      if (event === "TOKEN_REFRESHED" && session) {
         currentUser = session.user;
-        if (!appStarted) await startApp();
+      } else if (event === "SIGNED_IN" && session && !appStarted) {
+        currentUser = session.user;
+        await startApp();
       } else if (event === "SIGNED_OUT") {
         currentUser = null;
         appStarted = false;
@@ -1182,12 +1198,27 @@
       }
     });
 
-    const { data: { session } } = await sb.auth.getSession();
-    if (session) {
-      currentUser = session.user;
+    const cached = getCachedUser();
+    if (cached) {
+      currentUser = cached;
       await startApp();
+      sb.auth.getSession().then(function(res) {
+        if (res.data.session) {
+          currentUser = res.data.session.user;
+        } else {
+          currentUser = null;
+          appStarted = false;
+          showLoginOverlay();
+        }
+      }).catch(function() {});
     } else {
-      showLoginOverlay();
+      const { data: { session } } = await sb.auth.getSession();
+      if (session) {
+        currentUser = session.user;
+        await startApp();
+      } else {
+        showLoginOverlay();
+      }
     }
   }
 
