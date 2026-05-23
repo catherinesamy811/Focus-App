@@ -1,0 +1,14 @@
+﻿# Backups
+*.bak
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+
+# Claude Code
+.claude/
+CLAUDE.md

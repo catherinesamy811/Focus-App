@@ -1,0 +1,302 @@
+﻿<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Focus</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,wght@0,300;0,400;0,500;0,600;1,300&family=Playfair+Display:ital,wght@0,700;0,800;1,400;1,600&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.15/index.global.min.css" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+
+    <!-- Ribbon -->
+    <header class="ribbon">
+      <div class="ribbon-inner">
+        <a class="brand" data-nav="dashboard">
+          <span class="brand-mark">F</span>
+          <span class="brand-name">Focus</span>
+        </a>
+        <nav class="nav-list" aria-label="Main sections">
+          <a class="active" data-nav="dashboard">Dashboard</a>
+          <a data-nav="tasks">Tasks</a>
+          <a data-nav="habits">Habits</a>
+          <a data-nav="planner">Planner</a>
+          <a data-nav="calendar">Calendar</a>
+          <a data-nav="categories">Categories</a>
+          <a data-nav="themes">Themes</a>
+        </nav>
+      </div>
+    </header>
+
+    <!-- Pages -->
+    <main class="app-content">
+
+      <!-- Dashboard -->
+      <section class="page active" data-page="dashboard" id="dashboard">
+        <div class="page-inner">
+          <div class="page-header">
+            <div class="page-title-block">
+              <p class="eyebrow">Mission brief</p>
+              <h1><em>Today's</em> Command.</h1>
+            </div>
+            <div class="hero-meta">
+              <span id="current-date" class="hero-date"></span>
+              <div class="completion-block">
+                <strong id="completion-rate">0%</strong>
+                <small>task completion</small>
+              </div>
+              <div class="completion-block">
+                <strong id="habit-count">0/0</strong>
+                <small>habits done</small>
+              </div>
+            </div>
+          </div>
+
+          <div class="focus-line">
+            <span id="focus-count" class="focus-number">0 priorities</span>
+            <span class="focus-label">active today</span>
+            <span class="today-badge" id="today-task-count">0 open</span>
+          </div>
+
+          <div class="task-list" id="today-task-list"></div>
+
+          <p class="dashboard-quote" id="dashboard-quote"></p>
+        </div>
+      </section>
+
+      <!-- Tasks -->
+      <section class="page" data-page="tasks" id="tasks">
+        <div class="page-inner">
+          <div class="page-header">
+            <div class="page-title-block">
+              <p class="eyebrow">Execute</p>
+              <h1><em>Your</em> Moves.</h1>
+            </div>
+            <button class="ghost-button" id="clear-completed">Clear done</button>
+          </div>
+
+          <form class="stack-form" id="task-form">
+            <input id="task-title" type="text" placeholder="Name your next move..." required />
+            <div class="form-row">
+              <select id="task-category"></select>
+              <select id="task-period">
+                <option value="daily">Daily</option>
+                <option value="weekly">Weekly</option>
+                <option value="monthly">Monthly</option>
+                <option value="specific">Specific date(s)</option>
+              </select>
+              <button type="submit">Add task</button>
+            </div>
+            <label class="priority-label">
+              <input type="checkbox" id="task-priority" />
+              <span>High priority</span>
+            </label>
+            <fieldset class="weekday-picker" id="task-weekdays" hidden>
+              <legend>Which days?</legend>
+              <label><input type="checkbox" value="mon" /> Mon</label>
+              <label><input type="checkbox" value="tue" /> Tue</label>
+              <label><input type="checkbox" value="wed" /> Wed</label>
+              <label><input type="checkbox" value="thu" /> Thu</label>
+              <label><input type="checkbox" value="fri" /> Fri</label>
+              <label><input type="checkbox" value="sat" /> Sat</label>
+              <label><input type="checkbox" value="sun" /> Sun</label>
+            </fieldset>
+            <div class="date-picker" id="task-date-picker" hidden>
+              <p class="date-picker-label">Which date(s)?</p>
+              <div class="date-picker-input-row">
+                <input type="date" id="task-date-input" />
+                <button type="button" id="task-date-add-btn" class="date-add-btn">Add date</button>
+              </div>
+              <div class="date-chip-list" id="task-date-chips"></div>
+            </div>
+          </form>
+
+          <div class="filter-bar" id="task-filters"></div>
+          <div class="task-list" id="task-list"></div>
+
+          <div class="brainstorm-section">
+            <div class="brainstorm-header">
+              <p class="eyebrow">Idea dump</p>
+              <h3>Idea Dump</h3>
+              <p class="brainstorm-hint">A scratchpad for half-formed ideas before they become tasks. Nothing leaves this box until you decide.</p>
+            </div>
+            <form class="brainstorm-form" id="brainstorm-form">
+              <textarea id="brainstorm-text" placeholder="What's on your mind? Dump everything here..."></textarea>
+              <div class="brainstorm-actions">
+                <button type="submit">Save</button>
+                <button type="button" id="brainstorm-clear" class="ghost-button">Clear</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </section>
+
+      <!-- Habits -->
+      <section class="page" data-page="habits" id="habits">
+        <div class="page-inner">
+          <div class="page-header">
+            <div class="page-title-block">
+              <p class="eyebrow">Daily architecture</p>
+              <h1><em>Daily</em> Architecture.</h1>
+            </div>
+          </div>
+
+          <form class="stack-form" id="habit-form">
+            <input id="habit-title" type="text" placeholder="What will you master?" required />
+            <div class="form-row">
+              <select id="habit-category"></select>
+              <button type="submit">Track habit</button>
+            </div>
+          </form>
+
+          <div class="habit-list" id="habit-list"></div>
+        </div>
+      </section>
+
+      <!-- Planner -->
+      <section class="page" data-page="planner" id="planner">
+        <div class="page-inner">
+          <div class="page-header">
+            <div class="page-title-block">
+              <p class="eyebrow">Strategic outlook</p>
+              <h1><em>Strategic</em> Outlook.</h1>
+            </div>
+          </div>
+          <select id="planner-category" class="planner-filter"></select>
+
+          <div class="planner-grid">
+            <form class="planner-card" data-period="monthly">
+              <h3>Month's Directive</h3>
+              <textarea placeholder="What does winning this month look like?"></textarea>
+              <button type="submit">Save</button>
+            </form>
+            <form class="planner-card" data-period="weekly">
+              <h3>Week's Shape</h3>
+              <textarea placeholder="What deserves your best energy this week?"></textarea>
+              <button type="submit">Save</button>
+            </form>
+            <form class="planner-card" data-period="daily">
+              <h3>Today's Agenda</h3>
+              <textarea placeholder="What does a strong day look like?"></textarea>
+              <button type="submit">Save</button>
+            </form>
+          </div>
+        </div>
+      </section>
+
+      <!-- Calendar -->
+      <section class="page" data-page="calendar" id="calendar">
+        <div class="page-inner">
+          <div class="page-header">
+            <div class="page-title-block">
+              <p class="eyebrow">Time blocks</p>
+              <h1><em>Time</em> Blocks.</h1>
+            </div>
+          </div>
+
+          <form class="stack-form" id="block-form">
+            <input id="block-title" type="text" placeholder="Name this block..." required />
+            <div class="form-row">
+              <select id="block-category"></select>
+              <input type="date" id="block-date" required />
+              <input type="time" id="block-start" required />
+              <input type="time" id="block-end" required />
+              <button type="submit">Add block</button>
+            </div>
+          </form>
+
+          <div class="calendar-wrap">
+            <div id="focus-calendar"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Categories -->
+      <section class="page" data-page="categories" id="categories">
+        <div class="page-inner">
+          <div class="page-header">
+            <div class="page-title-block">
+              <p class="eyebrow">Life domains</p>
+              <h1><em>Life</em> Domains.</h1>
+            </div>
+          </div>
+
+          <form class="stack-form" id="category-form">
+            <div class="form-row">
+              <input id="category-name" type="text" placeholder="Name this domain..." required />
+              <input id="category-color" type="color" value="#4f6a8a" />
+              <button type="submit">Add domain</button>
+            </div>
+          </form>
+
+          <div class="category-list" id="category-list"></div>
+        </div>
+      </section>
+
+      <!-- Themes -->
+      <section class="page" data-page="themes" id="themes">
+        <div class="page-inner">
+          <div class="page-header">
+            <div class="page-title-block">
+              <p class="eyebrow">Aesthetic</p>
+              <h1>Aesthetic.</h1>
+            </div>
+          </div>
+          <p class="themes-note">Each theme changes the accent color and overall palette — pick the one that matches your energy today.</p>
+          <div class="theme-grid" id="theme-grid"></div>
+
+          <form class="quote-form" id="quote-form">
+            <p class="eyebrow">Dashboard quote</p>
+            <p class="quote-form-hint">This line appears on your dashboard every time you open the app.</p>
+            <textarea id="quote-input" placeholder="Write something that moves you..." rows="2"></textarea>
+            <button type="submit">Save quote</button>
+          </form>
+        </div>
+      </section>
+
+    </main>
+
+    <template id="empty-state-template">
+      <div class="empty-state">
+        <strong>Nothing here yet.</strong>
+        <span>Bold moves start somewhere. Make yours now.</span>
+      </div>
+    </template>
+
+    <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.15/index.global.min.js"></script>
+    <script src="app.js"></script>
+
+    <!-- Page switcher -->
+    <script>
+      (function () {
+        var links = document.querySelectorAll('[data-nav]');
+        var pages = document.querySelectorAll('[data-page]');
+
+        function show(id) {
+          pages.forEach(function (p) {
+            p.classList.toggle('active', p.dataset.page === id);
+          });
+          links.forEach(function (a) {
+            a.classList.toggle('active', a.dataset.nav === id);
+          });
+          window.dispatchEvent(new CustomEvent('appPageChange', { detail: id }));
+        }
+
+        links.forEach(function (link) {
+          link.addEventListener('click', function (e) {
+            e.preventDefault();
+            show(link.dataset.nav);
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+          });
+        });
+      })();
+    </script>
+
+  </body>
+</html>
