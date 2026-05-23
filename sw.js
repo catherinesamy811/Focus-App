@@ -1,4 +1,4 @@
-﻿const CACHE = 'focus-v1';
+﻿const CACHE = 'focus-v2';
 
 // App shell — cached on install for instant offline load
 const SHELL = [
@@ -11,7 +11,7 @@ const SHELL = [
   '/icons/icon-512.png',
 ];
 
-// ── Install: pre-cache the app shell ───────────────────────────────────────
+// -- Install: pre-cache the app shell ----------------------------------------
 self.addEventListener('install', (e) => {
   e.waitUntil(
     caches.open(CACHE)
@@ -20,7 +20,7 @@ self.addEventListener('install', (e) => {
   );
 });
 
-// ── Activate: delete stale caches ──────────────────────────────────────────
+// -- Activate: delete stale caches -------------------------------------------
 self.addEventListener('activate', (e) => {
   e.waitUntil(
     caches.keys()
@@ -31,7 +31,7 @@ self.addEventListener('activate', (e) => {
   );
 });
 
-// ── Fetch ───────────────────────────────────────────────────────────────────
+// -- Fetch -------------------------------------------------------------------
 self.addEventListener('fetch', (e) => {
   if (e.request.method !== 'GET') return;
 
@@ -58,7 +58,7 @@ self.addEventListener('fetch', (e) => {
     return;
   }
 
-  // CDN assets (fonts, FullCalendar): stale-while-revalidate
+  // CDN assets (fonts, FullCalendar, Supabase): stale-while-revalidate
   const isCDN =
     url.hostname === 'fonts.googleapis.com' ||
     url.hostname === 'fonts.gstatic.com'    ||
