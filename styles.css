@@ -1,4 +1,4 @@
-﻿/* --- Design tokens -------------------------------------------------------- */
+/* --- Design tokens -------------------------------------------------------- */
 :root {
   /* Theme-swappable */
   --bg: #F5F3EF;
@@ -1186,64 +1186,243 @@ form button:hover {
 
 /* --- Responsive: tablet --------------------------------------------------- */
 @media (max-width: 860px) {
-  :root {
-    --content-pad: 24px;
-  }
+  :root { --content-pad: 28px; }
 
-  .page-inner {
-    padding-top: 24px;
-    gap: 24px;
-  }
+  .page-inner { padding-top: 28px; gap: 26px; }
 
-  #dashboard .page-header {
-    padding: 30px 26px;
-    gap: 24px;
-  }
-
-  #dashboard h1 { font-size: 2.4rem; }
-  #dashboard h1 em { font-size: 2rem; }
+  #dashboard .page-header { padding: 28px 26px; gap: 20px; }
+  #dashboard h1 { font-size: 2.6rem; }
+  #dashboard h1 em { font-size: 2.1rem; }
 
   .planner-grid { grid-template-columns: 1fr; }
-  .hero-meta { display: none; }
 }
 
 /* --- Responsive: mobile --------------------------------------------------- */
-@media (max-width: 560px) {
+@media (max-width: 600px) {
   :root {
-    --content-pad: 16px;
-    --ribbon-h: 52px;
+    --content-pad: 20px;
+    --ribbon-h: 56px;
   }
 
+  /* Native scroll feel */
+  body { -webkit-overflow-scrolling: touch; }
+
+  /* Remove tap flash on interactive elements */
+  button, a, label, input[type="checkbox"] {
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* Safe-area aware bottom padding */
   .page-inner {
-    padding-top: 18px;
-    padding-bottom: 52px;
-    gap: 20px;
+    padding-top: 24px;
+    padding-bottom: max(72px, calc(52px + env(safe-area-inset-bottom)));
+    gap: 22px;
   }
 
-  .ribbon-inner { gap: 12px; }
+  /* ── Ribbon ─────────────────────────────────────────────────────────────── */
+  .ribbon-inner { gap: 8px; padding: 0 16px; }
   .brand-name { display: none; }
-  .nav-list a { padding: 0 10px; font-size: 0.68rem; }
 
+  /* Scrollable nav with right-fade scroll hint */
+  .nav-list {
+    -webkit-mask-image: linear-gradient(to right, black 75%, transparent 100%);
+    mask-image: linear-gradient(to right, black 75%, transparent 100%);
+  }
+
+  .nav-list a {
+    padding: 0 9px;
+    font-size: 0.65rem;
+    letter-spacing: 0.055em;
+  }
+
+  .ribbon-logout { padding: 3px 8px; font-size: 0.63rem; }
+
+  /* ── Dashboard hero ──────────────────────────────────────────────────────── */
   #dashboard .page-header {
-    padding: 22px 18px;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 18px;
+    padding: 22px 20px 20px;
     border-radius: 0 0 var(--radius-md) var(--radius-md);
   }
 
-  #dashboard h1 { font-size: 2rem; }
-  #dashboard h1 em { font-size: 1.7rem; }
-  .completion-block strong { font-size: 2rem; }
+  #dashboard h1 { font-size: 2.1rem; }
+  #dashboard h1 em { font-size: 1.75rem; }
 
+  /* Re-show stats in a compact horizontal strip below the title */
+  .hero-meta {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 24px;
+    width: 100%;
+    padding-top: 2px;
+    border-top: 1px solid var(--border);
+  }
+
+  .hero-date { font-size: 0.64rem; flex: 1; }
+
+  .completion-block { text-align: left; }
+
+  .completion-block strong {
+    display: inline;
+    font-size: 1.5rem;
+    margin-right: 4px;
+    letter-spacing: -0.05em;
+  }
+
+  .completion-block small { font-size: 0.54rem; }
+
+  /* Focus line */
+  .focus-number { font-size: 0.92rem; }
+  .focus-label { font-size: 0.68rem; }
+
+  /* Dashboard quote */
+  .dashboard-quote {
+    font-size: 0.96rem;
+    padding-left: 18px;
+    line-height: 1.8;
+  }
+
+  /* ── Touch targets ───────────────────────────────────────────────────────── */
+
+  /* Checkboxes: 20px box, 44px minimum hit area via padding */
+  input[type="checkbox"] {
+    width: 20px;
+    height: 20px;
+    margin: 12px;          /* expands tap area without changing layout */
+    flex-shrink: 0;
+  }
+
+  .task-left, .habit-left { gap: 2px; }
+
+  /* Task rows: taller for comfortable tapping */
+  .task-item {
+    padding: 15px 6px 15px 12px;
+    min-height: 60px;
+    align-items: center;
+  }
+
+  .task-item:hover { padding-left: 16px; }
+  .task-item.high-priority { padding-left: 9px; }
+  .task-item.high-priority:hover { padding-left: 11px; }
+
+  .task-title { font-size: 0.93rem; }
+
+  /* Habit rows */
+  .habit-item {
+    padding: 15px 6px;
+    min-height: 60px;
+  }
+
+  /* Delete buttons: 40px hit area */
+  .icon-button {
+    width: 40px;
+    height: 40px;
+  }
+
+  /* Filter chips: 36px tall */
+  .filter-chip {
+    min-height: 36px;
+    padding: 0 14px;
+    font-size: 0.65rem;
+  }
+
+  /* Weekday + date picker labels */
+  .weekday-picker label {
+    padding: 8px 13px;
+    font-size: 0.74rem;
+    min-height: 38px;
+    display: inline-flex;
+    align-items: center;
+  }
+
+  /* ── Forms ───────────────────────────────────────────────────────────────── */
   .form-row {
     flex-direction: column;
     align-items: stretch;
+    gap: 0;
   }
 
   .form-row select,
   .form-row input { flex: auto; }
 
-  .filter-bar { gap: 4px; }
+  /* Prevent iOS zoom: inputs need font-size >= 16px */
+  input:not([type="checkbox"]):not([type="color"]),
+  select,
+  textarea {
+    font-size: 16px;
+    min-height: 50px;
+  }
+
+  input[type="color"] { min-height: 44px; }
+
+  /* Form submit buttons: full-width + comfortable tap height */
+  .form-row button,
+  .stack-form > .form-row button {
+    width: 100%;
+    min-height: 50px;
+    margin-top: 14px;
+    font-size: 0.72rem;
+  }
+
+  .ghost-button { min-height: 40px; padding: 0 18px; }
+
+  /* ── Planner ─────────────────────────────────────────────────────────────── */
   .planner-grid { grid-template-columns: 1fr; }
+  .planner-card { padding: 20px 18px 16px; }
+  .planner-card textarea { min-height: 150px; font-size: 16px; }
+
+  /* ── Calendar ────────────────────────────────────────────────────────────── */
+  .calendar-wrap { padding: 12px 8px; border-radius: var(--radius); }
+
+  .fc { font-size: 0.8rem; }
+
+  .fc .fc-toolbar.fc-header-toolbar {
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 10px;
+  }
+
+  .fc .fc-toolbar-chunk { display: flex; align-items: center; gap: 4px; }
+  .fc .fc-toolbar-title { font-size: 0.82rem; }
+
+  .fc .fc-button {
+    font-size: 0.58rem !important;
+    padding: 6px 7px !important;
+    letter-spacing: 0.04em !important;
+  }
+
+  /* ── Themes ──────────────────────────────────────────────────────────────── */
   .theme-grid { grid-template-columns: 1fr 1fr; }
+  .theme-button { padding: 14px 14px; }
+
+  /* ── Categories ──────────────────────────────────────────────────────────── */
+  .category-pill { font-size: 0.78rem; padding: 9px 14px; }
+
+  /* ── Brainstorm ──────────────────────────────────────────────────────────── */
+  .brainstorm-form textarea { min-height: 110px; font-size: 16px; }
+  .brainstorm-actions { flex-direction: column; align-items: stretch; }
+  .brainstorm-actions .ghost-button { text-align: center; }
+
+  /* ── Empty state ─────────────────────────────────────────────────────────── */
+  .empty-state { padding: 44px 16px; }
+
+  /* ── Page header border on mobile ────────────────────────────────────────── */
+  .page-header { flex-wrap: wrap; }
+}
+
+/* --- Responsive: very small phones (iPhone SE, Galaxy A series) ----------- */
+@media (max-width: 380px) {
+  :root { --content-pad: 16px; }
+
+  #dashboard h1 { font-size: 1.85rem; }
+  #dashboard h1 em { font-size: 1.5rem; }
+
+  .nav-list a { padding: 0 7px; font-size: 0.6rem; }
+
+  .completion-block strong { font-size: 1.3rem; }
 }
 
 /* --- Quote form ----------------------------------------------------------- */
