@@ -1239,47 +1239,60 @@
   async function startApp() {
     if (appStarted || appStarting) return;
     appStarting = true;
+    log("Bootstrap: startApp begin");
 
-    // Seed state from localStorage so UI has something while Supabase loads.
-    // Discard it if it belongs to a different user (cross-user contamination).
-    const cached = loadState();
-    if (currentUser && cached._userId && cached._userId !== currentUser.id) {
-      log("Cached state belongs to a different user — discarding");
-      state = createDefaultState();
-    } else {
-      state = cached;
-    }
-
-    if (sb && currentUser) {
-      const result = await loadFromSupabase();
-      log("loadFromSupabase:", result);
-      if (result === "not_found") {
-        // New user — seed default state and save to Supabase
+    try {
+      // Seed from localStorage so the UI has data while Supabase loads.
+      // Discard if it belongs to a different user (cross-user contamination).
+      const cached = loadState();
+      if (currentUser && cached._userId && cached._userId !== currentUser.id) {
+        log("Bootstrap: cached state is from a different user — discarding");
         state = createDefaultState();
-        state._userId = currentUser.id;
-        await syncToSupabase();
-      } else if (result === "error") {
-        // Network/DB error — keep localStorage state, never overwrite remote
-        log("Supabase unavailable — running on cached state");
+      } else {
+        state = cached;
       }
-      // "loaded" and "skipped" — state already set by loadFromSupabase / loadState
-      subscribeToChanges();
-    }
 
-    hideLoginOverlay();
-    hideLoadingOverlay();
-    if (!eventsBound) {
-      bindEvents();
-      toggleWeekdayPicker();
-      eventsBound = true;
+      if (sb && currentUser) {
+        // Race loadFromSupabase against an 8 s timeout so a hung DB request
+        // can't delay the app indefinitely — we fall back to cached state.
+        const result = await Promise.race([
+          loadFromSupabase(),
+          new Promise(function(resolve) { setTimeout(function() { resolve("timeout"); }, 8000); }),
+        ]);
+        log("Bootstrap: loadFromSupabase →", result);
+
+        if (result === "not_found") {
+          state = createDefaultState();
+          state._userId = currentUser.id;
+          await syncToSupabase();
+        } else if (result === "error" || result === "timeout") {
+          log("Bootstrap: Supabase unavailable — running on cached state");
+        }
+        subscribeToChanges();
+      }
+
+      hideLoginOverlay();
+      if (!eventsBound) {
+        bindEvents();
+        toggleWeekdayPicker();
+        eventsBound = true;
+      }
+      renderAll();
+      renderBrainstorm();
+      appStarted = true;
+      log("Bootstrap: startApp complete");
+    } catch (err) {
+      log("Bootstrap: startApp error —", err);
+      appStarted = false;
+    } finally {
+      // hideLoadingOverlay is in finally so it is ALWAYS called, even if
+      // an exception fires before we reach it inside the try block.
+      appStarting = false;
+      hideLoadingOverlay();
     }
-    renderAll();
-    renderBrainstorm();
-    appStarted = true;
-    appStarting = false;
   }
 
-  async function initAuth() {
+  function initAuth() {
     const loginForm = document.getElementById("login-form");
     if (loginForm) loginForm.addEventListener("submit", handleLoginSubmit);
 
@@ -1288,39 +1301,69 @@
       logoutBtn.addEventListener("click", function() { sb.auth.signOut(); });
     }
 
-    // Auth state listener handles sign-in/sign-out after initial boot.
-    // startApp() guards against concurrent calls via appStarted / appStarting.
+    // Hard deadline. If no auth event resolves the boot within 10 s the
+    // session restore is stuck (expired refresh token, offline mid-refresh,
+    // etc.). We wipe the stale session and show login so the user isn't
+    // trapped on the loading screen.
+    let bootstrapResolved = false;
+
+    const bootstrapTimer = setTimeout(async function() {
+      if (bootstrapResolved) return;
+      bootstrapResolved = true;
+      log("Bootstrap: timeout — forcing login screen");
+      appStarted = false;
+      appStarting = false;
+      try { await sb.auth.signOut(); } catch {}
+      hideLoadingOverlay();
+      showLoginOverlay();
+    }, 10000);
+
+    function resolveBootstrap() {
+      bootstrapResolved = true;
+      clearTimeout(bootstrapTimer);
+    }
+
+    // INITIAL_SESSION is the primary boot trigger in Supabase v2.
+    // It fires on every page load/reload — with the persisted session if one
+    // exists, or null if there is none. SIGNED_IN handles fresh logins and any
+    // edge cases where Supabase skips INITIAL_SESSION. TOKEN_REFRESHED is a
+    // recovery path for cases where the initial event had a stale token.
     sb.auth.onAuthStateChange(async function(event, session) {
       log("Auth event:", event);
-      if (event === "SIGNED_IN" && session) {
+
+      if (event === "INITIAL_SESSION") {
+        resolveBootstrap();
+        if (session) {
+          currentUser = session.user;
+          if (!appStarted && !appStarting) await startApp();
+        } else {
+          hideLoadingOverlay();
+          showLoginOverlay();
+        }
+
+      } else if (event === "SIGNED_IN" && session) {
         currentUser = session.user;
+        resolveBootstrap();
         if (!appStarted && !appStarting) await startApp();
+
+      } else if (event === "TOKEN_REFRESHED" && session) {
+        currentUser = session.user;
+        // Recovery: fires after INITIAL_SESSION if a token refresh was needed.
+        // If the app hasn't started yet, this is our cue to boot.
+        if (!appStarted && !appStarting) {
+          resolveBootstrap();
+          await startApp();
+        }
+
       } else if (event === "SIGNED_OUT") {
         currentUser = null;
         appStarted = false;
         appStarting = false;
-        showLoginOverlay();
-      } else if (event === "TOKEN_REFRESHED" && session) {
-        currentUser = session.user;
-      }
-    });
-
-    // Single authoritative bootstrap — always verify via getSession(), never
-    // trust a stale localStorage token alone.
-    try {
-      const { data: { session } } = await sb.auth.getSession();
-      if (session) {
-        currentUser = session.user;
-        if (!appStarted && !appStarting) await startApp();
-      } else {
+        resolveBootstrap();
         hideLoadingOverlay();
         showLoginOverlay();
       }
-    } catch (err) {
-      log("getSession failed:", err);
-      hideLoadingOverlay();
-      showLoginOverlay();
-    }
+    });
   }
 
   async function init() {
@@ -1340,10 +1383,9 @@
     }).format(new Date());
 
     if (sb) {
-      await initAuth();
+      initAuth();
     } else {
       await startApp();
-      hideLoadingOverlay();
     }
   }
 
