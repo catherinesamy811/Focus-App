@@ -1860,3 +1860,37 @@ form button:hover {
   .drawer-save-btn { width: 100%; min-height: 50px; text-align: center; }
   .drawer-actions .ghost-button { width: 100%; min-height: 44px; text-align: center; }
 }
+
+/* --- Loading overlay ------------------------------------------------------- */
+.loading-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  background: var(--bg, #F5F3EF);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.loading-overlay[hidden] { display: none; }
+
+.loading-dots {
+  display: flex;
+  gap: 10px;
+}
+
+.loading-dots span {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent, #6B1D3A);
+  animation: loading-pulse 1.2s ease-in-out infinite;
+}
+
+.loading-dots span:nth-child(2) { animation-delay: 0.2s; }
+.loading-dots span:nth-child(3) { animation-delay: 0.4s; }
+
+@keyframes loading-pulse {
+  0%, 80%, 100% { opacity: 0.2; transform: scale(0.8); }
+  40%            { opacity: 1;   transform: scale(1);   }
+}

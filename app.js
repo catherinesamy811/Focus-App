@@ -110,6 +110,7 @@
   let currentUser = null;
   let syncTimer = null;
   let appStarted = false;
+  let appStarting = false;
   let eventsBound = false;
 
   function makeId(prefix = "id") {
@@ -196,35 +197,49 @@
   }
 
   async function loadFromSupabase() {
-    if (!sb || !currentUser) return false;
+    if (!sb || !currentUser) return "skipped";
     try {
       const { data, error } = await sb
         .from("user_state")
         .select("state")
         .eq("user_id", currentUser.id)
         .single();
-      if (error || !data) return false;
+
+      if (error) {
+        // PGRST116 = PostgREST "0 rows returned" — this user has no record yet
+        if (error.code === "PGRST116") return "not_found";
+        log("Supabase load error:", error.message || error);
+        return "error";
+      }
+
+      if (!data || !data.state) return "not_found";
+
       const fallback = createDefaultState();
       state = normalizeState({ ...fallback, ...data.state }, fallback);
+      state._userId = currentUser.id;
       try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch {}
-      return true;
-    } catch {
-      return false;
+      return "loaded";
+    } catch (err) {
+      log("Supabase load exception:", err);
+      return "error";
     }
   }
 
   function subscribeToChanges() {
     if (!sb || !currentUser) return;
+    const userId = currentUser.id;
     sb.channel("state-sync")
       .on("postgres_changes", {
         event: "UPDATE",
         schema: "public",
         table: "user_state",
-        filter: `user_id=eq.${currentUser.id}`,
+        filter: `user_id=eq.${userId}`,
       }, function(payload) {
         if (!payload.new || !payload.new.state) return;
+        if (payload.new.user_id && payload.new.user_id !== userId) return;
         const fallback = createDefaultState();
         state = normalizeState({ ...fallback, ...payload.new.state }, fallback);
+        state._userId = userId;
         try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch {}
         renderAll();
         renderBrainstorm();
@@ -284,6 +299,7 @@
       dashboardOrder: Array.isArray(input.dashboardOrder)
         ? input.dashboardOrder.filter((id) => typeof id === "string")
         : [],
+      _userId: typeof input._userId === "string" ? input._userId : null,
     };
   }
 
@@ -407,6 +423,32 @@
       '"': "&quot;",
       "'": "&#039;",
     })[char]);
+  }
+
+  function log(...args) {
+    // eslint-disable-next-line no-console
+    console.log("[Focus]", ...args);
+  }
+
+  function showLoadingOverlay() {
+    const el = document.getElementById("loading-overlay");
+    if (el) el.hidden = false;
+  }
+
+  function hideLoadingOverlay() {
+    const el = document.getElementById("loading-overlay");
+    if (el) el.hidden = true;
+  }
+
+  function cleanLegacyStorage() {
+    const obsolete = [
+      ...legacyStorageKeys,
+      "focus-productivity-state-v1",
+      "focus-productivity-state-v2",
+    ];
+    obsolete.forEach(function(key) {
+      try { localStorage.removeItem(key); } catch {}
+    });
   }
 
   function categoryById(id) {
@@ -1195,16 +1237,37 @@
   }
 
   async function startApp() {
-    state = loadState();
-    state = normalizeState(state, createDefaultState());
+    if (appStarted || appStarting) return;
+    appStarting = true;
+
+    // Seed state from localStorage so UI has something while Supabase loads.
+    // Discard it if it belongs to a different user (cross-user contamination).
+    const cached = loadState();
+    if (currentUser && cached._userId && cached._userId !== currentUser.id) {
+      log("Cached state belongs to a different user — discarding");
+      state = createDefaultState();
+    } else {
+      state = cached;
+    }
 
     if (sb && currentUser) {
-      const loaded = await loadFromSupabase();
-      if (!loaded) await syncToSupabase();
+      const result = await loadFromSupabase();
+      log("loadFromSupabase:", result);
+      if (result === "not_found") {
+        // New user — seed default state and save to Supabase
+        state = createDefaultState();
+        state._userId = currentUser.id;
+        await syncToSupabase();
+      } else if (result === "error") {
+        // Network/DB error — keep localStorage state, never overwrite remote
+        log("Supabase unavailable — running on cached state");
+      }
+      // "loaded" and "skipped" — state already set by loadFromSupabase / loadState
       subscribeToChanges();
     }
 
     hideLoginOverlay();
+    hideLoadingOverlay();
     if (!eventsBound) {
       bindEvents();
       toggleWeekdayPicker();
@@ -1213,18 +1276,7 @@
     renderAll();
     renderBrainstorm();
     appStarted = true;
-  }
-
-  function getCachedUser() {
-    try {
-      for (let i = 0; i < localStorage.length; i++) {
-        const key = localStorage.key(i);
-        if (!key || !key.startsWith("sb-") || !key.endsWith("-auth-token")) continue;
-        const session = JSON.parse(localStorage.getItem(key) || "null");
-        if (session && session.user && session.refresh_token) return session.user;
-      }
-    } catch {}
-    return null;
+    appStarting = false;
   }
 
   async function initAuth() {
@@ -1236,48 +1288,48 @@
       logoutBtn.addEventListener("click", function() { sb.auth.signOut(); });
     }
 
+    // Auth state listener handles sign-in/sign-out after initial boot.
+    // startApp() guards against concurrent calls via appStarted / appStarting.
     sb.auth.onAuthStateChange(async function(event, session) {
-      if (event === "TOKEN_REFRESHED" && session) {
+      log("Auth event:", event);
+      if (event === "SIGNED_IN" && session) {
         currentUser = session.user;
-      } else if (event === "SIGNED_IN" && session && !appStarted) {
-        currentUser = session.user;
-        await startApp();
+        if (!appStarted && !appStarting) await startApp();
       } else if (event === "SIGNED_OUT") {
         currentUser = null;
         appStarted = false;
+        appStarting = false;
         showLoginOverlay();
+      } else if (event === "TOKEN_REFRESHED" && session) {
+        currentUser = session.user;
       }
     });
 
-    const cached = getCachedUser();
-    if (cached) {
-      currentUser = cached;
-      await startApp();
-      sb.auth.getSession().then(function(res) {
-        if (res.data.session) {
-          currentUser = res.data.session.user;
-        } else {
-          currentUser = null;
-          appStarted = false;
-          showLoginOverlay();
-        }
-      }).catch(function() {});
-    } else {
+    // Single authoritative bootstrap — always verify via getSession(), never
+    // trust a stale localStorage token alone.
+    try {
       const { data: { session } } = await sb.auth.getSession();
       if (session) {
         currentUser = session.user;
-        await startApp();
+        if (!appStarted && !appStarting) await startApp();
       } else {
+        hideLoadingOverlay();
         showLoginOverlay();
       }
+    } catch (err) {
+      log("getSession failed:", err);
+      hideLoadingOverlay();
+      showLoginOverlay();
     }
   }
 
   async function init() {
+    cleanLegacyStorage();
     cacheDom();
 
     if (!requiredDomExists()) {
       console.error("Focus could not start because required page elements are missing.");
+      hideLoadingOverlay();
       return;
     }
 
@@ -1291,6 +1343,7 @@
       await initAuth();
     } else {
       await startApp();
+      hideLoadingOverlay();
     }
   }
 
