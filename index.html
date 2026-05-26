@@ -338,6 +338,18 @@
       })();
     </script>
 
+    <!-- Task edit drawer -->
+    <div class="task-drawer" id="task-drawer" aria-hidden="true">
+      <div class="task-drawer-backdrop"></div>
+      <div class="task-drawer-panel">
+        <div class="task-drawer-header">
+          <h3>Edit task</h3>
+          <button class="icon-button" id="task-drawer-close" aria-label="Close drawer"></button>
+        </div>
+        <div class="task-drawer-body" id="task-drawer-body"></div>
+      </div>
+    </div>
+
     <!-- Service worker -->
     <script>
       if ("serviceWorker" in navigator) {

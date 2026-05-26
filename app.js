@@ -103,6 +103,9 @@
   const dom = {};
   let state;
   let pendingDates = [];
+  let editingTaskId = null;
+  let editPendingDates = [];
+  let dragState = null;
   let calendarInstance = null;
   let currentUser = null;
   let syncTimer = null;
@@ -149,6 +152,7 @@
       plans: {},
       brainstorm: "",
       calendarEvents: [],
+      dashboardOrder: [],
     };
   }
 
@@ -276,6 +280,9 @@
       brainstorm: typeof input.brainstorm === "string" ? input.brainstorm : "",
       calendarEvents: Array.isArray(input.calendarEvents)
         ? input.calendarEvents.map(normalizeCalendarEvent).filter(Boolean)
+        : [],
+      dashboardOrder: Array.isArray(input.dashboardOrder)
+        ? input.dashboardOrder.filter((id) => typeof id === "string")
         : [],
     };
   }
@@ -452,6 +459,10 @@
       blockStart: document.querySelector("#block-start"),
       blockEnd: document.querySelector("#block-end"),
       calendarEl: document.querySelector("#focus-calendar"),
+      taskDrawer: document.querySelector("#task-drawer"),
+      taskDrawerBody: document.querySelector("#task-drawer-body"),
+      taskDrawerClose: document.querySelector("#task-drawer-close"),
+      taskDrawerBackdrop: document.querySelector(".task-drawer-backdrop"),
     });
   }
 
@@ -531,25 +542,43 @@
     });
 
     dom.taskList.innerHTML = tasks.length
-      ? tasks.map(renderTask).join("")
+      ? tasks.map((t) => renderTask(t, "tasks")).join("")
       : emptyState("Nothing in motion.", "Every decisive move starts here.");
   }
 
   function renderTodayTasks() {
-    const tasks = tasksForToday();
+    const tasks = sortedDashboardTasks(tasksForToday());
     const openCount = tasks.filter((task) => !task.done).length;
 
     dom.todayTaskCount.textContent = `${openCount} open`;
     dom.todayTaskList.innerHTML = tasks.length
-      ? tasks.map(renderTask).join("")
+      ? tasks.map((t) => renderTask(t, "dashboard")).join("")
       : emptyState("A clear field.", "No priorities claimed for today. Set your first move.");
   }
 
-  function renderTask(task) {
+  function sortedDashboardTasks(tasks) {
+    const order = state.dashboardOrder || [];
+    const ordered = order.map((id) => tasks.find((t) => t.id === id)).filter(Boolean);
+    const unordered = tasks.filter((t) => !order.includes(t.id));
+    return [...ordered, ...unordered];
+  }
+
+  function renderTask(task, context) {
     const category = categoryById(task.categoryId);
+    const isDashboard = context === "dashboard";
+    const isTasksPage = context === "tasks";
+
+    const dragHandle = isDashboard
+      ? `<button class="drag-handle" type="button" data-drag-task="${escapeHtml(task.id)}" aria-label="Drag to reorder"><span>⋮</span><span>⋮</span></button>`
+      : "";
+
+    const editBtn = isTasksPage
+      ? `<button class="icon-button task-edit-icon" type="button" data-edit-task="${escapeHtml(task.id)}" aria-label="Edit task"></button>`
+      : "";
 
     return `
-      <article class="task-item ${task.done ? "done" : ""} ${task.priority === "high" ? "high-priority" : ""} ${isOverdue(task) ? "overdue" : ""}">
+      <article class="task-item ${task.done ? "done" : ""} ${task.priority === "high" ? "high-priority" : ""} ${isOverdue(task) ? "overdue" : ""}" data-task-id="${escapeHtml(task.id)}">
+        ${dragHandle}
         <div class="task-left">
           <input class="task-check" type="checkbox" data-task-toggle="${escapeHtml(task.id)}" ${task.done ? "checked" : ""} />
           <div>
@@ -563,7 +592,10 @@
             </span>
           </div>
         </div>
-        <button class="icon-button" type="button" data-delete-task="${escapeHtml(task.id)}" aria-label="Delete task">x</button>
+        <div class="task-item-actions">
+          ${editBtn}
+          <button class="icon-button" type="button" data-delete-task="${escapeHtml(task.id)}" aria-label="Delete task">x</button>
+        </div>
       </article>
     `;
   }
@@ -769,6 +801,19 @@
       return;
     }
 
+    const drawerRemoveDateButton = target.closest("[data-drawer-remove-date]");
+    if (drawerRemoveDateButton) {
+      editPendingDates = editPendingDates.filter((d) => d !== drawerRemoveDateButton.dataset.drawerRemoveDate);
+      renderDrawerDateChips();
+      return;
+    }
+
+    const editTaskButton = target.closest("[data-edit-task]");
+    if (editTaskButton) {
+      openTaskDrawer(editTaskButton.dataset.editTask);
+      return;
+    }
+
     const filterButton = target.closest("[data-filter]");
     const taskDeleteButton = target.closest("[data-delete-task]");
     const habitDeleteButton = target.closest("[data-delete-habit]");
@@ -882,6 +927,12 @@
     dom.brainstormForm.addEventListener("submit", saveBrainstorm);
     dom.brainstormClear.addEventListener("click", clearBrainstorm);
     dom.blockForm.addEventListener("submit", addBlock);
+    dom.todayTaskList.addEventListener("pointerdown", handleDragPointerDown);
+    dom.taskDrawerClose.addEventListener("click", closeTaskDrawer);
+    dom.taskDrawerBackdrop.addEventListener("click", closeTaskDrawer);
+    document.addEventListener("keydown", function (e) {
+      if (e.key === "Escape" && editingTaskId) closeTaskDrawer();
+    });
     window.addEventListener("appPageChange", function(e) {
       if (e.detail === "calendar") {
         if (!calendarInstance) {
@@ -1241,6 +1292,232 @@
     } else {
       await startApp();
     }
+  }
+
+  // --- Task edit drawer -------------------------------------------------------
+
+  function openTaskDrawer(id) {
+    const task = state.tasks.find((t) => t.id === id);
+    if (!task) return;
+
+    editingTaskId = id;
+    editPendingDates = [...(task.dates || [])];
+
+    const categoryOptions = state.categories
+      .map((c) => `<option value="${escapeHtml(c.id)}" ${c.id === task.categoryId ? "selected" : ""}>${escapeHtml(c.name)}</option>`)
+      .join("");
+
+    dom.taskDrawerBody.innerHTML = `
+      <input id="drawer-task-title" type="text" value="${escapeHtml(task.title)}" placeholder="Task title..." />
+      <div class="form-row drawer-selects">
+        <select id="drawer-task-category">${categoryOptions}</select>
+        <select id="drawer-task-period">
+          <option value="daily" ${task.period === "daily" ? "selected" : ""}>Daily</option>
+          <option value="weekly" ${task.period === "weekly" ? "selected" : ""}>Weekly</option>
+          <option value="monthly" ${task.period === "monthly" ? "selected" : ""}>Monthly</option>
+          <option value="specific" ${task.period === "specific" ? "selected" : ""}>Specific date(s)</option>
+        </select>
+      </div>
+      <fieldset class="weekday-picker" id="drawer-weekdays" ${task.period !== "weekly" ? "hidden" : ""}>
+        <legend>Which days?</legend>
+        ${weekdays.map((wd) => `<label><input type="checkbox" class="drawer-weekday-check" value="${wd.id}" ${(task.days || []).includes(wd.id) ? "checked" : ""} />${wd.label}</label>`).join("")}
+      </fieldset>
+      <div class="date-picker" id="drawer-date-picker" ${task.period !== "specific" ? "hidden" : ""}>
+        <p class="date-picker-label">Which date(s)?</p>
+        <div class="date-picker-input-row">
+          <input type="date" id="drawer-date-input" />
+          <button type="button" id="drawer-date-add-btn" class="date-add-btn">Add date</button>
+        </div>
+        <div class="date-chip-list" id="drawer-date-chips"></div>
+      </div>
+      <div class="drawer-toggles">
+        <label class="priority-label">
+          <input type="checkbox" id="drawer-priority" ${task.priority === "high" ? "checked" : ""} />
+          <span>High priority</span>
+        </label>
+        <label class="priority-label">
+          <input type="checkbox" id="drawer-done" ${task.done ? "checked" : ""} />
+          <span>Mark complete</span>
+        </label>
+      </div>
+      <div class="drawer-actions">
+        <button type="button" id="drawer-save-btn" class="drawer-save-btn">Save changes</button>
+        <button type="button" id="drawer-cancel-btn" class="ghost-button">Cancel</button>
+      </div>
+    `;
+
+    renderDrawerDateChips();
+
+    document.getElementById("drawer-task-period").addEventListener("change", toggleDrawerPickers);
+    document.getElementById("drawer-date-add-btn").addEventListener("click", addDrawerDate);
+    document.getElementById("drawer-save-btn").addEventListener("click", saveTaskFromDrawer);
+    document.getElementById("drawer-cancel-btn").addEventListener("click", closeTaskDrawer);
+
+    dom.taskDrawer.classList.add("open");
+    dom.taskDrawer.setAttribute("aria-hidden", "false");
+
+    requestAnimationFrame(() => {
+      const titleInput = document.getElementById("drawer-task-title");
+      if (titleInput) { titleInput.focus(); titleInput.select(); }
+    });
+  }
+
+  function closeTaskDrawer() {
+    if (!dom.taskDrawer) return;
+    dom.taskDrawer.classList.remove("open");
+    dom.taskDrawer.setAttribute("aria-hidden", "true");
+    editingTaskId = null;
+    editPendingDates = [];
+  }
+
+  function saveTaskFromDrawer() {
+    if (!editingTaskId) return;
+
+    const titleInput = document.getElementById("drawer-task-title");
+    const categorySelect = document.getElementById("drawer-task-category");
+    const periodSelect = document.getElementById("drawer-task-period");
+    const priorityCheck = document.getElementById("drawer-priority");
+    const doneCheck = document.getElementById("drawer-done");
+
+    const title = titleInput ? titleInput.value.trim() : "";
+    if (!title) {
+      if (titleInput) titleInput.focus();
+      return;
+    }
+
+    const period = periodSelect ? periodSelect.value : "daily";
+    const days = period === "weekly"
+      ? [...document.querySelectorAll(".drawer-weekday-check:checked")].map((el) => el.value)
+      : [];
+    const dates = period === "specific" ? [...editPendingDates] : [];
+
+    state.tasks = state.tasks.map((task) =>
+      task.id === editingTaskId
+        ? {
+            ...task,
+            title,
+            categoryId: categorySelect ? categorySelect.value : task.categoryId,
+            period,
+            days,
+            dates,
+            priority: priorityCheck && priorityCheck.checked ? "high" : "normal",
+            done: doneCheck ? doneCheck.checked : task.done,
+          }
+        : task
+    );
+
+    closeTaskDrawer();
+    writeStorage();
+    renderAll();
+  }
+
+  function toggleDrawerPickers() {
+    const periodSelect = document.getElementById("drawer-task-period");
+    if (!periodSelect) return;
+    const val = periodSelect.value;
+    const weekdaysPicker = document.getElementById("drawer-weekdays");
+    const datePicker = document.getElementById("drawer-date-picker");
+    if (weekdaysPicker) weekdaysPicker.hidden = val !== "weekly";
+    if (datePicker) datePicker.hidden = val !== "specific";
+  }
+
+  function addDrawerDate() {
+    const input = document.getElementById("drawer-date-input");
+    if (!input) return;
+    const val = input.value;
+    if (!val || editPendingDates.includes(val)) return;
+    editPendingDates.push(val);
+    editPendingDates.sort();
+    input.value = "";
+    renderDrawerDateChips();
+  }
+
+  function renderDrawerDateChips() {
+    const container = document.getElementById("drawer-date-chips");
+    if (!container) return;
+    container.innerHTML = editPendingDates
+      .map((d) => `
+        <span class="date-chip">
+          ${escapeHtml(formatDates([d]))}
+          <button class="date-chip-remove" type="button" data-drawer-remove-date="${escapeHtml(d)}" aria-label="Remove date">×</button>
+        </span>
+      `)
+      .join("");
+  }
+
+  // --- Dashboard drag & drop --------------------------------------------------
+
+  function handleDragPointerDown(e) {
+    const handle = e.target.closest("[data-drag-task]");
+    if (!handle) return;
+    e.preventDefault();
+
+    const taskId = handle.dataset.dragTask;
+    const item = handle.closest(".task-item");
+    if (!item) return;
+
+    const rect = item.getBoundingClientRect();
+    const ghost = item.cloneNode(true);
+    ghost.classList.add("task-drag-ghost");
+    ghost.style.cssText = `position:fixed;top:${rect.top}px;left:${rect.left}px;width:${rect.width}px;pointer-events:none;z-index:500;margin:0;box-sizing:border-box;`;
+    document.body.appendChild(ghost);
+    item.classList.add("task-dragging");
+
+    dragState = {
+      taskId,
+      item,
+      ghost,
+      list: dom.todayTaskList,
+      startY: e.clientY,
+      startTop: rect.top,
+    };
+
+    document.addEventListener("pointermove", handleDragPointerMove, { passive: false });
+    document.addEventListener("pointerup", handleDragPointerUp);
+  }
+
+  function handleDragPointerMove(e) {
+    if (!dragState) return;
+    e.preventDefault();
+
+    const { ghost, item, list, startY, startTop } = dragState;
+    const dy = e.clientY - startY;
+    ghost.style.top = (startTop + dy) + "px";
+
+    const ghostRect = ghost.getBoundingClientRect();
+    const ghostMid = ghostRect.top + ghostRect.height / 2;
+    const siblings = [...list.querySelectorAll(".task-item[data-task-id]")].filter((el) => el !== item);
+
+    let insertBefore = null;
+    for (const sibling of siblings) {
+      const sibRect = sibling.getBoundingClientRect();
+      if (ghostMid < sibRect.top + sibRect.height / 2) {
+        insertBefore = sibling;
+        break;
+      }
+    }
+
+    if (insertBefore) {
+      list.insertBefore(item, insertBefore);
+    } else {
+      list.appendChild(item);
+    }
+  }
+
+  function handleDragPointerUp() {
+    if (!dragState) return;
+
+    const { ghost, item, list } = dragState;
+    ghost.remove();
+    item.classList.remove("task-dragging");
+
+    const newOrder = [...list.querySelectorAll(".task-item[data-task-id]")].map((el) => el.dataset.taskId);
+    state.dashboardOrder = newOrder;
+    writeStorage();
+
+    document.removeEventListener("pointermove", handleDragPointerMove);
+    document.removeEventListener("pointerup", handleDragPointerUp);
+    dragState = null;
   }
 
   if (document.readyState === "loading") {
