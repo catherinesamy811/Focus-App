@@ -1,26 +1,18 @@
-﻿const CACHE = 'focus-v2';
+// Cache version — bump this to force-evict all cached CDN assets across sessions.
+// Own-origin assets (HTML/JS/CSS) are always fetched fresh so they don't need a bump.
+const CACHE = 'focus-v3';
 
-// App shell — cached on install for instant offline load
-const SHELL = [
-  '/',
-  '/index.html',
-  '/styles.css',
-  '/app.js',
-  '/manifest.json',
-  '/icons/icon-192.png',
-  '/icons/icon-512.png',
-];
-
-// -- Install: pre-cache the app shell ----------------------------------------
-self.addEventListener('install', (e) => {
-  e.waitUntil(
-    caches.open(CACHE)
-      .then((c) => c.addAll(SHELL))
-      .then(() => self.skipWaiting())
-  );
+// ─── Install ──────────────────────────────────────────────────────────────────
+// No pre-caching here. Pre-caching during install is intercepted by the
+// currently-active old SW's fetch handler, which returns stale cached content —
+// defeating the entire purpose. Assets are cached lazily on first network fetch.
+self.addEventListener('install', () => {
+  self.skipWaiting();
 });
 
-// -- Activate: delete stale caches -------------------------------------------
+// ─── Activate ─────────────────────────────────────────────────────────────────
+// Delete every cache except the current version, then claim all open clients so
+// this SW controls pages that were loaded before it activated.
 self.addEventListener('activate', (e) => {
   e.waitUntil(
     caches.keys()
@@ -31,50 +23,66 @@ self.addEventListener('activate', (e) => {
   );
 });
 
-// -- Fetch -------------------------------------------------------------------
+// ─── Fetch ────────────────────────────────────────────────────────────────────
 self.addEventListener('fetch', (e) => {
   if (e.request.method !== 'GET') return;
 
   const url = new URL(e.request.url);
 
-  // Same-origin assets: cache-first, network fallback, then cache the response
+  // Own-origin assets: network-first.
+  // Cache is populated on every successful fetch and serves as the offline
+  // fallback only. This guarantees every online load gets the latest deployment.
   if (url.origin === self.location.origin) {
-    e.respondWith(
-      caches.match(e.request).then((cached) => {
-        if (cached) return cached;
-        return fetch(e.request).then((res) => {
-          if (res && res.status === 200 && res.type !== 'opaque') {
-            caches.open(CACHE).then((c) => c.put(e.request, res.clone()));
-          }
-          return res;
-        }).catch(() => {
-          // Navigation fallback: serve index.html when offline
-          if (e.request.mode === 'navigate') {
-            return caches.match('/index.html');
-          }
-        });
-      })
-    );
+    e.respondWith(networkFirst(e.request));
     return;
   }
 
-  // CDN assets (fonts, FullCalendar, Supabase): stale-while-revalidate
-  const isCDN =
-    url.hostname === 'fonts.googleapis.com' ||
-    url.hostname === 'fonts.gstatic.com'    ||
-    url.hostname === 'cdn.jsdelivr.net';
-
-  if (isCDN) {
-    e.respondWith(
-      caches.open(CACHE).then((c) =>
-        c.match(e.request).then((cached) => {
-          const fromNet = fetch(e.request).then((res) => {
-            if (res && res.status === 200) c.put(e.request, res.clone());
-            return res;
-          }).catch(() => cached);
-          return cached || fromNet;
-        })
-      )
-    );
+  // CDN assets (fonts, FullCalendar, Supabase): stale-while-revalidate.
+  // These are version-locked by URL so serving from cache is safe.
+  if (isCDN(url)) {
+    e.respondWith(staleWhileRevalidate(e.request));
   }
 });
+
+// ─── Strategies ───────────────────────────────────────────────────────────────
+
+function isCDN(url) {
+  return (
+    url.hostname === 'fonts.googleapis.com' ||
+    url.hostname === 'fonts.gstatic.com'    ||
+    url.hostname === 'cdn.jsdelivr.net'
+  );
+}
+
+async function networkFirst(request) {
+  const cache = await caches.open(CACHE);
+  try {
+    // cache: 'no-cache' bypasses the HTTP cache layer and sends a conditional
+    // request to the origin. Vercel responds with 304 (fast) when unchanged,
+    // or the new asset when it changed. This prevents double-caching problems.
+    const response = await fetch(request, { cache: 'no-cache' });
+    if (response.ok) {
+      cache.put(request, response.clone());
+    }
+    return response;
+  } catch {
+    const cached = await cache.match(request);
+    if (cached) return cached;
+    // Navigation fallback: serve the cached shell when fully offline
+    if (request.mode === 'navigate') {
+      return cache.match('/index.html');
+    }
+  }
+}
+
+async function staleWhileRevalidate(request) {
+  const cache = await caches.open(CACHE);
+  const cached = await cache.match(request);
+  const fromNet = fetch(request)
+    .then((response) => {
+      if (response.ok) cache.put(request, response.clone());
+      return response;
+    })
+    .catch(() => cached);
+  return cached || fromNet;
+}

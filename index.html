@@ -354,7 +354,32 @@
     <script>
       if ("serviceWorker" in navigator) {
         window.addEventListener("load", function () {
-          navigator.serviceWorker.register("/sw.js");
+          navigator.serviceWorker.register("/sw.js").then(function (reg) {
+
+            // When a new SW is found, watch it activate and reload the page
+            // so users immediately run the freshly deployed code.
+            // The controller check ensures this only fires on *updates*, not
+            // on the very first install (where there was no prior controller).
+            reg.addEventListener("updatefound", function () {
+              var next = reg.installing;
+              if (!next) return;
+              next.addEventListener("statechange", function () {
+                if (next.state === "activated" && navigator.serviceWorker.controller) {
+                  window.location.reload();
+                }
+              });
+            });
+
+            // Re-check for a new SW whenever the user brings the app back into
+            // focus. This catches deployments that happened while the app was
+            // open in a background tab.
+            document.addEventListener("visibilitychange", function () {
+              if (document.visibilityState === "visible") reg.update();
+            });
+
+          }).catch(function (err) {
+            console.warn("Service worker registration failed:", err);
+          });
         });
       }
     </script>
